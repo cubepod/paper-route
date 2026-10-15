@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>朝刊ルート ― THE DAILY ROUTE</title>
+<style>
+  :root{
+    --ink:#14110E;
+    --paper:#F3EEE1;
+    --paper-dim:#DED6C4;
+    --dawn:#F58F5B;
+    --amber:#FFC63F;
+    --night:#101828;
+    --road:#3B3B46;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;overscroll-behavior:none;}
+  body{
+    background:#080B12;
+    color:var(--paper);
+    font-family:"Helvetica Neue",Arial,"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;
+    -webkit-user-select:none;user-select:none;
+    -webkit-tap-highlight-color:transparent;
+    display:flex;align-items:center;justify-content:center;
+  }
+  #wrap{position:relative;width:100%;height:100%;max-width:1400px;overflow:hidden;background:var(--night);}
+  canvas{display:block;width:100%;height:100%;touch-action:none;}
+
+  /* ---------- HUD : 新聞の題字を細長くしたもの ---------- */
+  #hud{
+    position:absolute;left:0;right:0;top:0;padding:6px 10px 7px;
+    display:flex;align-items:center;gap:14px;
+    background:linear-gradient(180deg,rgba(12,14,22,.88),rgba(12,14,22,.55) 70%,transparent);
+    pointer-events:none;
+  }
+  .masthead{
+    font-family:"Hiragino Mincho ProN","Yu Mincho",Georgia,serif;
+    font-size:13px;letter-spacing:.34em;color:var(--paper-dim);
+    border-top:2px solid var(--paper-dim);border-bottom:1px solid var(--paper-dim);
+    padding:2px 8px 3px;white-space:nowrap;
+  }
+  .stat{display:flex;flex-direction:column;line-height:1;gap:3px;}
+  .stat b{font:600 10px/1 ui-monospace,Menlo,monospace;letter-spacing:.18em;color:#9AA3B5;}
+  .stat span{font:700 20px/1 ui-monospace,Menlo,monospace;color:var(--paper);font-variant-numeric:tabular-nums;}
+  .stat span.warn{color:#FF6B5A;}
+  #score span{color:var(--amber);}
+  #hearts{letter-spacing:2px;font-size:17px;line-height:1;}
+  #progwrap{flex:1;min-width:60px;height:6px;background:rgba(255,255,255,.16);border-radius:3px;overflow:hidden;}
+  #prog{height:100%;width:0;background:linear-gradient(90deg,var(--dawn),var(--amber));}
+
+  /* ---------- タッチ操作 ---------- */
+  #touch{position:absolute;inset:0;display:none;}
+  #touch.on{display:block;}
+  #stickbase{
+    position:absolute;left:max(18px,env(safe-area-inset-left));bottom:max(22px,env(safe-area-inset-bottom));
+    width:132px;height:132px;border-radius:50%;
+    background:radial-gradient(circle,rgba(255,255,255,.10),rgba(255,255,255,.04));
+    border:2px solid rgba(243,238,225,.35);touch-action:none;
+  }
+  #stickbase::after{content:"ハンドル";position:absolute;left:0;right:0;bottom:-19px;text-align:center;
+    font:600 10px/1 ui-monospace,monospace;letter-spacing:.2em;color:rgba(243,238,225,.6);}
+  #knob{position:absolute;left:50%;top:50%;width:58px;height:58px;margin:-29px 0 0 -29px;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%,#F8F4EA,#B9B0A0);box-shadow:0 3px 10px rgba(0,0,0,.5);}
+  #throwbtn{
+    position:absolute;right:max(18px,env(safe-area-inset-right));bottom:max(30px,env(safe-area-inset-bottom));
+    width:118px;height:118px;border-radius:50%;border:2px solid rgba(255,198,63,.7);
+    background:radial-gradient(circle at 38% 32%,#FFD873,#E08A2C);
+    color:#2B1B05;font:800 15px/1.25 "Hiragino Kaku Gothic ProN",sans-serif;letter-spacing:.08em;
+    touch-action:none;box-shadow:0 4px 14px rgba(0,0,0,.5);
+  }
+  #throwbtn:active{transform:scale(.94);}
+
+  /* ---------- オーバーレイ：新聞の一面 ---------- */
+  #overlay{position:absolute;inset:0;display:grid;place-items:center;padding:16px;
+    background:rgba(6,9,16,.72);backdrop-filter:blur(3px);overflow:auto;}
+  #overlay.hide{display:none;}
+  .front{
+    width:min(600px,100%);background:var(--paper);color:var(--ink);
+    padding:18px 20px 20px;box-shadow:0 18px 50px rgba(0,0,0,.6);
+    border:1px solid #C9C0AC;
+  }
+  .front .rule{border-top:3px double var(--ink);margin:8px 0;}
+  .eyebrow{display:flex;justify-content:space-between;font:600 10px/1 ui-monospace,monospace;letter-spacing:.16em;color:#5A5346;}
+  .front h1{
+    font-family:"Hiragino Mincho ProN","Yu Mincho",Georgia,serif;
+    font-size:clamp(30px,7vw,46px);margin:6px 0 2px;letter-spacing:.06em;font-weight:700;
+  }
+  .front h2{font-family:"Hiragino Mincho ProN","Yu Mincho",serif;font-size:19px;margin:12px 0 6px;letter-spacing:.05em;}
+  .lede{font-size:13px;line-height:1.65;color:#3A342A;margin:4px 0 0;}
+  .cols{column-count:2;column-gap:20px;column-rule:1px solid #C9C0AC;font-size:12.5px;line-height:1.7;color:#332E25;}
+  @media (max-width:520px){.cols{column-count:1;}}
+  .cols p{margin:0 0 8px;break-inside:avoid;}
+  .k{display:inline-block;background:var(--ink);color:var(--paper);border-radius:3px;padding:1px 6px;
+     font:600 11px/1.5 ui-monospace,monospace;margin-right:2px;}
+  table.tally{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px;}
+  table.tally td{padding:5px 0;border-bottom:1px dotted #B7AE99;}
+  table.tally td:last-child{text-align:right;font:700 15px/1 ui-monospace,monospace;font-variant-numeric:tabular-nums;}
+  table.tally tr.total td{border-bottom:none;border-top:2px solid var(--ink);padding-top:8px;font-size:15px;}
+  table.tally tr.total td:last-child{font-size:22px;}
+  .start{
+    margin-top:14px;width:100%;padding:14px;border:none;cursor:pointer;
+    background:var(--ink);color:var(--paper);font:800 16px/1 "Hiragino Kaku Gothic ProN",sans-serif;letter-spacing:.14em;
+  }
+  .start:hover{background:#33261A;}
+  .start:focus-visible{outline:3px solid var(--dawn);outline-offset:2px;}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:#3A342A;align-items:center;}
+  .sw{display:inline-block;width:13px;height:13px;border:1px solid #4A4437;margin-right:5px;vertical-align:-2px;}
+  .route{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 6px;margin:10px 0 2px;
+    padding:12px 8px 8px;background:#EAE3D3;border:1px solid #C9C0AC;}
+  .hs{width:46px;text-align:center;position:relative;}
+  .hs svg{display:block;margin:0 auto;}
+  .hs em{display:block;font:600 10px/1.5 ui-monospace,monospace;color:#6A6255;font-style:normal;}
+  .hs.new em,.hs.lost em{font-weight:700;}
+  .hs.new{outline:2px solid #1E6B3A;outline-offset:1px;}
+  .hs.lost{outline:2px solid #B03A26;outline-offset:1px;opacity:.75;}
+  .hs.new em{color:#1E6B3A;} .hs.lost em{color:#B03A26;}
+  .netline{text-align:center;font:700 14px/1.4 "Hiragino Kaku Gothic ProN",sans-serif;margin:8px 0 0;}
+  #toast{position:absolute;left:50%;top:64px;transform:translateX(-50%);pointer-events:none;
+    font:700 15px/1 "Hiragino Kaku Gothic ProN",sans-serif;letter-spacing:.08em;
+    padding:8px 14px;border-radius:2px;background:rgba(12,14,22,.82);opacity:0;transition:opacity .25s;}
+  #toast.on{opacity:1;}
+  #pausebtn{position:absolute;right:8px;top:52px;width:38px;height:38px;border-radius:4px;
+    background:rgba(12,14,22,.6);border:1px solid rgba(243,238,225,.3);color:var(--paper);font-size:15px;cursor:pointer;}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="cv"></canvas>
+
+  <div id="hud">
+    <div class="masthead">朝刊ルート</div>
+    <div class="stat" id="score"><b>SCORE</b><span id="scoreV">0</span></div>
+    <div class="stat"><b>PAPERS</b><span id="papersV">10</span></div>
+    <div class="stat"><b>LIVES</b><span id="heartsV">♦♦♦</span></div>
+    <div id="progwrap"><div id="prog"></div></div>
+  </div>
+  <button id="pausebtn" aria-label="一時停止">❚❚</button>
+  <div id="toast"></div>
+
+  <div id="touch">
+    <div id="stickbase"><div id="knob"></div></div>
+    <button id="throwbtn">新聞を<br>投げる</button>
+  </div>
+
+  <div id="overlay"><div class="front" id="front"></div></div>
+</div>
+
+<script>
+"use strict";
+/* =========================================================
+   朝刊ルート ― 擬似3D（平行投影）新聞配達ゲーム
+   投影： sx = CX + x + (z-camZ)*KX ,  sy = BASEY - (z-camZ)*KY - y
+   → 視点は「右上・後方やや上」。手前面(-z)と右面(+x)と上面が見える。
+   ========================================================= */
+const VW=960, VH=640, CX=540, BASEY=540, KX=0.32, KY=0.66;
+const FAR=640, NEAR=-380;
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+let scale=1, offX=0, offY=0, dpr=1;
+
+function resize(){
+  const r=document.getElementById('wrap').getBoundingClientRect();
+  dpr=Math.min(window.devicePixelRatio||1,2);
+  cv.width=Math.round(r.width*dpr); cv.height=Math.round(r.height*dpr);
+  scale=Math.min(r.width/880, r.height/620);
+  offX=(r.width-VW*scale)/2; offY=(r.height-VH*scale)/2;
+}
+addEventListener('resize',resize);
+
+/* ---------------- 音 ---------------- */
+let AC=null, noiseBuf=null;
+function audio(){
+  if(AC) { if(AC.state==='suspended') AC.resume(); return AC; }
+  AC=new (window.AudioContext||window.webkitAudioContext)();
+  const n=AC.sampleRate*1.2, b=AC.createBuffer(1,n,AC.sampleRate), d=b.getChannelData(0);
+  for(let i=0;i<n;i++) d[i]=Math.random()*2-1;
+  noiseBuf=b; return AC;
+}
+function noise(dur,f,q,gain,type='bandpass',slide=1){
+  if(!AC) return; const t=AC.currentTime;
+  const s=AC.createBufferSource(); s.buffer=noiseBuf;
+  const bp=AC.createBiquadFilter(); bp.type=type; bp.frequency.setValueAtTime(f,t);
+  bp.frequency.exponentialRampToValueAtTime(Math.max(60,f*slide),t+dur); bp.Q.value=q;
+  const g=AC.createGain(); g.gain.setValueAtTime(gain,t); g.gain.exponentialRampToValueAtTime(0.0008,t+dur);
+  s.connect(bp).connect(g).connect(AC.destination); s.start(t); s.stop(t+dur+.02);
+}
+function tone(f1,f2,dur,gain,type='square',delay=0){
+  if(!AC) return; const t=AC.currentTime+delay;
+  const o=AC.createOscillator(), g=AC.createGain(); o.type=type;
+  o.frequency.setValueAtTime(f1,t); o.frequency.exponentialRampToValueAtTime(Math.max(30,f2),t+dur);
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(gain,t+0.012);
+  g.gain.exponentialRampToValueAtTime(0.0008,t+dur);
+  o.connect(g).connect(AC.destination); o.start(t); o.stop(t+dur+.03);
+}
+const SFX={
+  throw(){ noise(.16,1400,1.2,.18,'bandpass',.35); },
+  mailbox(){ tone(900,900,.09,.22); tone(1400,1400,.13,.2,'square',.08); },
+  yard(){ tone(320,220,.14,.14,'triangle'); },
+  glass(){ noise(.55,5200,.7,.5,'highpass',.25);
+           for(let i=0;i<6;i++) tone(2600+Math.random()*2600,900,.28,.06,'triangle',i*0.035); },
+  crash(){ noise(.42,320,.6,.5,'lowpass',.3); tone(200,42,.4,.28,'sawtooth'); },
+  pickup(){ tone(520,1040,.14,.16,'square'); },
+  goal(){ [523,659,784,1047].forEach((f,i)=>tone(f,f,.18,.16,'square',i*.11)); },
+  fail(){ tone(300,80,.7,.22,'sawtooth'); }
+};
+
+/* ---------------- 入力 ---------------- */
+const keys={};
+let steerInput=0, throwQueued=false;
+addEventListener('keydown',e=>{
+  if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Space'].includes(e.code)) e.preventDefault();
+  if(e.repeat) return; keys[e.code]=true; audio();
+  if(e.code==='Space') throwQueued=true;
+  if(e.code==='Enter'||e.code==='NumpadEnter'){ const b=document.querySelector('#front .start'); if(b) b.click(); }
+  if(e.code==='KeyP') togglePause();
+});
+addEventListener('keyup',e=>{keys[e.code]=false;});
+
+const isTouch=matchMedia('(pointer:coarse)').matches||('ontouchstart' in window);
+if(isTouch) document.getElementById('touch').classList.add('on');
+const base=document.getElementById('stickbase'), knob=document.getElementById('knob');
+let stickId=null;
+function stickMove(e){
+  const r=base.getBoundingClientRect(), R=r.width/2-10;
+  let dx=e.clientX-(r.left+r.width/2), dy=e.clientY-(r.top+r.height/2);
+  const len=Math.hypot(dx,dy); if(len>R){dx*=R/len; dy*=R/len;}
+  knob.style.transform=`translate(${dx}px,${dy}px)`;
+  steerInput=Math.max(-1,Math.min(1,dx/R));
+}
+base.addEventListener('pointerdown',e=>{audio();stickId=e.pointerId;base.setPointerCapture(e.pointerId);stickMove(e);});
+base.addEventListener('pointermove',e=>{if(e.pointerId===stickId)stickMove(e);});
+function stickEnd(e){ if(e.pointerId!==stickId)return; stickId=null; steerInput=0; knob.style.transform='translate(0,0)'; }
+base.addEventListener('pointerup',stickEnd); base.addEventListener('pointercancel',stickEnd);
+document.getElementById('throwbtn').addEventListener('pointerdown',e=>{e.preventDefault();audio();throwQueued=true;});
+document.getElementById('pausebtn').addEventListener('click',togglePause);
+
+/* ---------------- 世界 ---------------- */
+const ROAD_L=-145, ROAD_R=145, WALK_L=-212, WALK_R=212;
+const WALL_X=-240;                       // 家の道路側の壁（窓の面）
+const MAIL_X=-196;                       // ポストの位置
+const HOUSES=14, HOUSE_GAP=430, FIRST_Z=760;
+
+let state='title', camZ=0, T=0, stage=1, career=0;
+let route=[];                             // 購読契約は日をまたいで持ち越す
+let player, houses, ents, papers, parts, pops, stats, goalZ, shake=0;
+
+function rnd(a,b){return a+Math.random()*(b-a);}
+function pick(a){return a[(Math.random()*a.length)|0];}
+function newRoute(){
+  route=[];
+  for(let i=0;i<HOUSES;i++) route.push(Math.random()<0.5);
+  if(route.filter(Boolean).length<5) route[0]=route[3]=route[7]=route[10]=route[12]=true;
+}
+
+function reset(){
+  player={x:0,z:0,speed:0,lean:0,lives:3,papers:12,crash:0,inv:0,score:0};
+  houses=[]; ents=[]; papers=[]; parts=[]; pops=[];
+  stats={mail:0,yard:0,broke:0,miss:0};
+  for(let i=0;i<HOUSES;i++){
+    const z=FIRST_Z+i*HOUSE_GAP;
+    const sub=route[i];
+    houses.push({i,z,sub,state:'pending',shards:[false,false],flash:0});
+    ents.push({t:'mailbox',x:MAIL_X,z,h:i});
+    // 路上駐車
+    if(Math.random()<0.42) ents.push({t:'car',x:rnd(-1,1)<0?rnd(-118,-40):rnd(40,118),z:z+rnd(-190,190),col:pick(['#B8452F','#2F5FA8','#D6A32B','#3C7C56','#7A4E9E'])});
+    if(Math.random()<0.10) ents.push({t:'car',x:rnd(-110,110),z:z+rnd(-330,-210),col:pick(['#8A8F98','#B8452F','#2F5FA8'])});
+    // 歩道の障害物
+    for(let k=0;k<2;k++){
+      const right=Math.random()<0.5;
+      ents.push({t:pick(['can','cone','hydrant']),x:right?rnd(155,200):rnd(-205,-160),z:z+rnd(-200,200)});
+    }
+    // 飛び出し
+    if(i>0&&Math.random()<0.62) ents.push({t:'kid',x:-300,z:z+rnd(-230,140),on:false,vx:210});
+    if(i>1&&Math.random()<0.5) ents.push({t:'dog',x:236,z:z+rnd(-260,120),on:false,vx:-260});
+    // 補充束
+    if(i%3===2) ents.push({t:'bundle',x:rnd(-90,90),z:z+rnd(-160,160),got:false});
+    // 街灯・木
+    ents.push({t:'lamp',x:206,z:z-140});
+    ents.push({t:'tree',x:rnd(250,330),z:z+rnd(-200,200)});
+  }
+  goalZ=FIRST_Z+(HOUSES-1)*HOUSE_GAP+700;
+  camZ=-60;
+}
+
+/* ---------------- 投影・描画ヘルパ ---------------- */
+function px(x,y,z){ return CX + x + (z-camZ)*KX; }
+function py(x,y,z){ return BASEY - (z-camZ)*KY - y; }
+function poly(pts,fill,stroke){
+  ctx.beginPath(); ctx.moveTo(pts[0][0],pts[0][1]);
+  for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i][0],pts[i][1]);
+  ctx.closePath();
+  if(fill){ctx.fillStyle=fill;ctx.fill();}
+  if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1;ctx.stroke();}
+}
+function P(x,y,z){ return [px(x,y,z),py(x,y,z)]; }
+function ground(x1,x2,z1,z2,fill){ poly([P(x1,0,z1),P(x2,0,z1),P(x2,0,z2),P(x1,0,z2)],fill); }
+function shade(hex,f){
+  const n=parseInt(hex.slice(1),16);
+  const r=Math.min(255,((n>>16)&255)*f)|0, g=Math.min(255,((n>>8)&255)*f)|0, b=Math.min(255,(n&255)*f)|0;
+  return `rgb(${r},${g},${b})`;
+}
+function box(x,z,w,d,h,col,alpha){
+  if(alpha!==undefined) ctx.globalAlpha=alpha;
+  const F=[P(x,0,z),P(x+w,0,z),P(x+w,h,z),P(x,h,z)];
+  const R=[P(x+w,0,z),P(x+w,0,z+d),P(x+w,h,z+d),P(x+w,h,z)];
+  const U=[P(x,h,z),P(x+w,h,z),P(x+w,h,z+d),P(x,h,z+d)];
+  poly(F,shade(col,.80)); poly(R,shade(col,.98)); poly(U,shade(col,1.18));
+  ctx.globalAlpha=1;
+}
+function shadow(x,z,w,d){
+  const p=P(x,0,z); ctx.save(); ctx.globalAlpha=.24; ctx.fillStyle='#000';
+  ctx.beginPath(); ctx.ellipse(p[0],p[1],w*.6,d*.34,0,0,7); ctx.fill(); ctx.restore();
+}
+
+/* ---------------- 更新 ---------------- */
+function update(dt){
+  T+=dt;
+  if(state!=='play'){ parts.forEach(p=>stepPart(p,dt)); parts=parts.filter(p=>p.life>0); return; }
+  const p=player;
+
+  // 速度
+  const prog=Math.min(1,p.z/goalZ);
+  const target=(p.crash>0)?0:(214+prog*118+(stage-1)*9);
+  p.speed+=(target-p.speed)*Math.min(1,dt*(p.crash>0?9:1.6));
+  p.z+=p.speed*dt;
+  camZ=p.z-60;
+  if(p.crash>0){p.crash-=dt;}
+  if(p.inv>0)p.inv-=dt;
+
+  // ハンドル
+  let st=steerInput;
+  if(keys['ArrowLeft']||keys['KeyA']) st=-1;
+  if(keys['ArrowRight']||keys['KeyD']) st=1;
+  if(p.crash>0) st=0;
+  p.lean+=(st-p.lean)*Math.min(1,dt*11);
+  p.x+=p.lean*310*dt;
+  p.x=Math.max(-206,Math.min(206,p.x));
+
+  // 投げる
+  if(throwQueued){
+    throwQueued=false;
+    if(p.crash<=0){
+      if(p.papers>0){
+        p.papers--;
+        papers.push({x:p.x-16,y:46,z:p.z+10,vx:-520,vy:120,vz:p.speed,rot:0,live:true});
+        SFX.throw();
+      } else toast('新聞がない！ 束を拾おう');
+    }
+  }
+
+  // 新聞
+  for(const q of papers){
+    if(!q.live) continue;
+    const ox=q.x;
+    q.x+=q.vx*dt; q.y+=q.vy*dt; q.z+=q.vz*dt; q.vy-=900*dt; q.rot+=dt*15;
+    // ポスト面通過
+    if(ox>MAIL_X && q.x<=MAIL_X && q.y<62){
+      const h=nearHouse(q.z,44);
+      if(h){ hitMailbox(h,q); continue; }
+    }
+    // 窓面通過
+    if(ox>WALL_X && q.x<=WALL_X){
+      const h=nearHouse(q.z,150);
+      if(h && q.y>=45 && q.y<=90){
+        const wz=[h.z-58,h.z+58];
+        for(let i=0;i<2;i++) if(Math.abs(q.z-wz[i])<32){ hitWindow(h,i,q); break; }
+      }
+      if(!q.live) continue;
+      if(h && q.y<=95){ q.live=false; land(q,h); continue; }
+    }
+    if(q.y<=0){ q.live=false; land(q,nearHouse(q.z,150)); }
+    if(q.z<camZ-200) q.live=false;
+  }
+  papers=papers.filter(q=>q.live);
+
+  // 敵・障害物
+  for(const e of ents){
+    if(e.t==='kid'||e.t==='dog'){
+      if(!e.on && p.z>e.z-460 && p.z<e.z+60){ e.on=true; }
+      if(e.on){ e.x+=e.vx*dt; e.z+=(e.t==='dog'?-20:14)*dt;
+        if(e.x>330||e.x<-330) e.on=false; }
+    }
+    if(e.t==='bundle'&&!e.got&&Math.abs(e.z-p.z)<34&&Math.abs(e.x-p.x)<40){
+      e.got=true; p.papers=Math.min(30,p.papers+6); SFX.pickup(); popup(e.x,e.z,'＋6 新聞','#7ED9A6');
+    }
+    if(p.inv<=0&&p.crash<=0&&solid(e)){
+      const hw=(e.t==='car'?38:e.t==='kid'?15:e.t==='dog'?18:16);
+      const hd=(e.t==='car'?78:22);
+      if(Math.abs(e.x-p.x)<hw+22 && Math.abs(e.z-p.z)<hd+26){ crash(e); }
+    }
+  }
+
+  // ポストを通り過ぎた＝未配達判定
+  for(const h of houses){
+    if(h.state==='pending' && p.z>h.z+120){ h.state='missed'; if(h.sub){ stats.miss++; popup(MAIL_X,h.z,'未配達','#FF8E7A'); } }
+    if(h.flash>0)h.flash-=dt;
+  }
+
+  parts.forEach(x=>stepPart(x,dt)); parts=parts.filter(x=>x.life>0);
+  pops.forEach(x=>{x.life-=dt;x.y+=54*dt;}); pops=pops.filter(x=>x.life>0);
+  if(shake>0) shake=Math.max(0,shake-dt*2.6);
+
+  if(p.z>goalZ){ finish(); }
+  hud();
+}
+function solid(e){ return e.t==='car'||e.t==='can'||e.t==='cone'||e.t==='hydrant'||e.t==='mailbox'||e.t==='lamp'||((e.t==='kid'||e.t==='dog')&&e.on); }
+function nearHouse(z,tol){ let best=null,bd=tol; for(const h of houses){const d=Math.abs(h.z-z); if(d<bd){bd=d;best=h;}} return best; }
+
+function hitMailbox(h,q){
+  q.live=false;
+  if(h.sub){
+    if(h.state==='pending'||h.state==='yard'){
+      const add=(h.state==='yard')?300:500;
+      player.score+=add; stats.mail++; if(h.state==='yard')stats.yard--;
+      h.state='mail'; popup(MAIL_X,h.z,'＋'+add+' ポスト命中！','#FFD35C'); SFX.mailbox(); h.flash=.5;
+    } else { popup(MAIL_X,h.z,'配達済み','#C9C0AC'); SFX.yard(); }
+  } else { popup(MAIL_X,h.z,'ここは購読者じゃない','#E0B0A8'); SFX.yard(); }
+}
+function hitWindow(h,i,q){
+  q.live=false; h.shards[i]=true; h.flash=.6; shake=Math.max(shake,.7); SFX.glass();
+  const wz=h.z+(i?58:-58);
+  for(let k=0;k<26;k++){
+    parts.push({x:WALL_X+2,y:rnd(46,90),z:wz+rnd(-30,30),
+      vx:rnd(40,300),vy:rnd(-30,240),vz:rnd(-120,120),life:rnd(.7,1.5),
+      col:pick(['#CFEBF6','#A9D8EC','#EAF7FD']),s:rnd(2.5,6)});
+  }
+  if(h.sub){ player.score-=300; stats.broke++; popup(WALL_X,wz,'−300 購読者の窓を割った','#FF6B5A'); }
+  else { popup(WALL_X,wz,'±0 それでも購読はしない','#F0C9C2'); }
+}
+function land(q,h){
+  for(let k=0;k<7;k++) parts.push({x:q.x,y:6,z:q.z,vx:rnd(-60,60),vy:rnd(20,90),vz:rnd(-60,60),life:.4,col:'#D8CFB8',s:2.4});
+  if(q.x<-214 && h && Math.abs(h.z-q.z)<150){
+    if(h.sub){
+      if(h.state==='pending'){ h.state='yard'; stats.yard++; player.score+=100; popup(q.x,q.z,'＋100 敷地内','#B9E39B'); SFX.yard(); }
+    }
+  }
+}
+function crash(e){
+  const p=player; p.lives--; p.crash=1.25; p.inv=2.4; shake=1; SFX.crash();
+  popup(p.x,p.z,pick(['ぶつかった！','わあっ！','転倒！']),'#FF6B5A');
+  for(let k=0;k<16;k++) parts.push({x:p.x,y:20,z:p.z,vx:rnd(-200,200),vy:rnd(60,300),vz:rnd(-160,160),life:rnd(.4,.9),col:'#FFD35C',s:rnd(2,5)});
+  if(e.t==='kid'||e.t==='dog') e.on=false;
+  if(p.lives<=0){ setTimeout(()=>{ if(state==='play') gameover(); },700); }
+}
+function stepPart(p,dt){ p.x+=p.vx*dt; p.y+=p.vy*dt; p.z+=p.vz*dt; p.vy-=760*dt; if(p.y<0){p.y=0;p.vy*=-0.35;p.vx*=.6;p.vz*=.6;} p.life-=dt; }
+function popup(x,z,t,c){ pops.push({x,y:70,z,t,c,life:1.5}); }
+
+/* ---------------- 描画 ---------------- */
+function draw(){
+  const w=cv.width/dpr,h=cv.height/dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  // 空
+  const sky=ctx.createLinearGradient(0,0,0,h*.55);
+  sky.addColorStop(0,'#1B2A5E'); sky.addColorStop(.45,'#8A5C86'); sky.addColorStop(.78,'#F58F5B'); sky.addColorStop(1,'#FFD9A0');
+  ctx.fillStyle=sky; ctx.fillRect(0,0,w,h);
+  ctx.setTransform(dpr*scale,0,0,dpr*scale,dpr*(offX+(shake?Math.sin(T*70)*shake*6:0)),dpr*(offY+(shake?Math.cos(T*61)*shake*5:0)));
+
+  // 地面
+  ground(-1400,-400,NEAR,FAR,'#3E7A4C');
+  ground(-400,WALK_L,NEAR,FAR,'#4E9E5C');
+  ground(WALK_L,ROAD_L,NEAR,FAR,'#C4BCAA');
+  ground(ROAD_L,ROAD_R,NEAR,FAR,'#3B3B46');
+  ground(ROAD_R,WALK_R,NEAR,FAR,'#C4BCAA');
+  ground(WALK_R,1400,NEAR,FAR,'#4E9E5C');
+  // 路面標示
+  ground(ROAD_L,ROAD_L+7,NEAR,FAR,'#D9D2BE'); ground(ROAD_R-7,ROAD_R,NEAR,FAR,'#D9D2BE');
+  const z0=Math.floor((camZ+NEAR)/170)*170;
+  for(let z=z0;z<camZ+FAR;z+=170) ground(-6,6,z,z+86,'#E7DEC6');
+  for(let z=z0;z<camZ+FAR;z+=110){ ground(WALK_L,ROAD_L,z,z+2,'#B0A896'); ground(ROAD_R,WALK_R,z,z+2,'#B0A896'); }
+  // 各家の私道
+  for(const h of houses){ if(h.z>camZ+NEAR&&h.z<camZ+FAR) ground(-390,WALK_L,h.z-26,h.z+26,'#BDB49F'); }
+  // ゴールライン
+  if(goalZ<camZ+FAR){ for(let i=0;i<14;i++) ground(ROAD_L+i*21,ROAD_L+i*21+21,goalZ+(i%2?0:16),goalZ+(i%2?16:32),i%2?'#F3EEE1':'#14110E'); }
+
+  // 描画リスト（奥→手前）
+  const list=[];
+  for(const h of houses) if(h.z>camZ-260&&h.z<camZ+FAR+200) list.push({k:h.z-0.32*-315,d:()=>house(h)});
+  for(const e of ents){
+    if(e.z<camZ-260||e.z>camZ+FAR+120) continue;
+    if(e.t==='bundle'&&e.got) continue;
+    if((e.t==='kid'||e.t==='dog')&&!e.on&&e.t==='dog') continue;
+    list.push({k:e.z-0.32*e.x,d:()=>ent(e)});
+  }
+  for(const q of papers) list.push({k:q.z-0.32*q.x,d:()=>paper(q)});
+  list.push({k:player.z-0.32*player.x,d:bike});
+  list.sort((a,b)=>b.k-a.k);
+  list.forEach(o=>o.d());
+
+  // 破片
+  for(const p of parts){
+    const a=Math.min(1,p.life*2.4); ctx.globalAlpha=a; ctx.fillStyle=p.col;
+    const q=P(p.x,p.y,p.z); ctx.fillRect(q[0]-p.s/2,q[1]-p.s/2,p.s,p.s);
+  }
+  ctx.globalAlpha=1;
+
+  // 遠景のもや
+  const g=ctx.createLinearGradient(0,BASEY-FAR*KY-60,0,BASEY-FAR*KY+150);
+  g.addColorStop(0,'rgba(255,205,160,.95)'); g.addColorStop(1,'rgba(255,205,160,0)');
+  ctx.fillStyle=g; ctx.fillRect(-600,-400,2400,BASEY-FAR*KY+150+400);
+
+  // ポップアップ
+  ctx.textAlign='center'; ctx.font='700 17px "Hiragino Kaku Gothic ProN",sans-serif';
+  for(const p of pops){
+    const q=P(p.x,p.y,p.z); ctx.globalAlpha=Math.min(1,p.life);
+    ctx.lineWidth=4; ctx.strokeStyle='rgba(10,12,18,.8)'; ctx.strokeText(p.t,q[0],q[1]);
+    ctx.fillStyle=p.c; ctx.fillText(p.t,q[0],q[1]);
+  }
+  ctx.globalAlpha=1;
+}
+
+function house(h){
+  const X=-390,W=150,Z=h.z-105,D=210,H=100;
+  const body=h.sub?'#F2EEE2':'#B8402F';
+  const roof=h.sub?'#6B7A8F':'#6E2A20';
+  shadow(-315,h.z,150,180);
+  box(X,Z,W,D,H,body);
+  // 屋根（切妻）
+  const apexF=P(X+W/2,H+48,Z), apexB=P(X+W/2,H+48,Z+D);
+  poly([P(X,H,Z),P(X+W,H,Z),apexF],shade(roof,.86));
+  poly([P(X+W,H,Z),P(X+W,H,Z+D),apexB,apexF],shade(roof,1.12));
+  // 窓（道路側の面 x=WALL_X）
+  for(let i=0;i<2;i++){
+    const zc=h.z+(i?58:-58);
+    const pts=[P(WALL_X,45,zc-30),P(WALL_X,45,zc+30),P(WALL_X,90,zc+30),P(WALL_X,90,zc-30)];
+    if(h.shards[i]){
+      poly(pts,'#241F1B');
+      ctx.save();ctx.beginPath();ctx.moveTo(pts[0][0],pts[0][1]);for(let k=1;k<4;k++)ctx.lineTo(pts[k][0],pts[k][1]);ctx.clip();
+      ctx.strokeStyle='rgba(190,225,240,.8)';ctx.lineWidth=1.4;
+      for(let k=0;k<7;k++){const a=P(WALL_X,45+Math.random()*45,zc-30+Math.random()*60),b=P(WALL_X,45+Math.random()*45,zc-30+Math.random()*60);
+        ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();}
+      ctx.restore();
+    } else {
+      poly(pts,h.flash>0?'#FFF3C4':'#6FA8C4','rgba(30,30,30,.5)');
+      const gl=[P(WALL_X,50,zc-24),P(WALL_X,50,zc-4),P(WALL_X,84,zc-14),P(WALL_X,84,zc-30)];
+      poly(gl,'rgba(255,255,255,.34)');
+    }
+  }
+  // ドア
+  poly([P(WALL_X,0,h.z-12),P(WALL_X,0,h.z+12),P(WALL_X,58,h.z+12),P(WALL_X,58,h.z-12)],'#4A3524');
+  // 表札
+  ctx.textAlign='center'; ctx.font='700 11px ui-monospace,monospace';
+  const t=P(WALL_X,112,h.z);
+  ctx.fillStyle=h.sub?'rgba(255,255,255,.85)':'rgba(20,10,10,.55)';
+  ctx.fillText(h.sub?'購読':'非購読',t[0],t[1]);
+  // 配達済みマーク
+  if(h.state==='mail'||h.state==='yard'){ const m=P(MAIL_X+4,66,h.z); ctx.fillStyle='#FFD35C'; ctx.font='700 13px sans-serif'; ctx.fillText('✓',m[0],m[1]); }
+}
+
+function ent(e){
+  switch(e.t){
+    case 'car': shadow(e.x,e.z,80,150); box(e.x-38,e.z-78,76,156,34,e.col);
+      box(e.x-30,e.z-40,60,74,26,shade(e.col,.9).replace('rgb','rgba').replace(')',',1)')); 
+      box(e.x-32,e.z-36,64,66,26,'#26303C'); break;
+    case 'mailbox':{
+      const h=houses[e.h];
+      shadow(e.x,e.z,26,26);
+      box(e.x-4,e.z-4,8,8,42,'#6B5B45');
+      box(e.x-14,e.z-16,28,32,22,h&&h.sub?(h.flash>0?'#FFE9A8':'#EDE6D6'):'#9C4436');
+      box(e.x-16,e.z-3,4,6,14,'#C0392B');
+      break;}
+    case 'can': shadow(e.x,e.z,30,30); box(e.x-15,e.z-15,30,30,40,'#5E6B72'); box(e.x-17,e.z-17,34,34,5,'#7B8890'); break;
+    case 'cone': shadow(e.x,e.z,24,24); box(e.x-12,e.z-12,24,24,6,'#E4712B'); box(e.x-7,e.z-7,14,14,30,'#F0863C'); break;
+    case 'hydrant': shadow(e.x,e.z,20,20); box(e.x-9,e.z-9,18,18,34,'#C9432E'); box(e.x-12,e.z-6,24,12,8,'#C9432E'); break;
+    case 'kid': if(!e.on)return; shadow(e.x,e.z,26,20);
+      box(e.x-8,e.z-6,7,10,20,'#2E4374'); box(e.x+1,e.z-6,7,10,20,'#2E4374');
+      box(e.x-11,e.z-8,22,16,26,'#37C2A6'); box(e.x-8,e.z-6,16,12,14,'#E8B48C');
+      box(e.x-9,e.z-7,18,14,5,'#D6452F'); break;
+    case 'dog': if(!e.on)return; shadow(e.x,e.z,34,18);
+      box(e.x-16,e.z-7,32,14,16,'#8A5A32'); box(e.x+8,e.z-6,14,12,14,'#9C6A3E');
+      box(e.x-22,e.z-4,8,6,8,'#6E4726'); break;
+    case 'bundle': shadow(e.x,e.z,30,24); box(e.x-14,e.z-11,28,22,10,'#E7DEC6'); box(e.x-13,e.z-10,26,20,14,'#D8CFB0');
+      { const t=P(e.x,26,e.z); ctx.textAlign='center'; ctx.font='700 10px ui-monospace,monospace'; ctx.fillStyle='#3A342A'; ctx.fillText('NEWS',t[0],t[1]); } break;
+    case 'lamp': shadow(e.x,e.z,14,14); box(e.x-4,e.z-4,8,8,120,'#3C4450'); box(e.x-14,e.z-5,20,10,10,'#FFE9A8'); break;
+    case 'tree': shadow(e.x,e.z,44,44); box(e.x-7,e.z-7,14,14,54,'#5B3F26');
+      box(e.x-30,e.z-30,60,60,46,'#2F7A44'); box(e.x-20,e.z-20,40,40,20,'#3E9455'); break;
+  }
+}
+
+function paper(q){
+  const p=P(q.x,q.y,q.z);
+  ctx.save(); ctx.translate(p[0],p[1]); ctx.rotate(q.rot);
+  ctx.fillStyle='#F3EEE1'; ctx.fillRect(-7,-4.5,14,9);
+  ctx.fillStyle='#B9B0A0'; ctx.fillRect(-7,-4.5,14,2);
+  ctx.restore();
+  const s=P(q.x,0,q.z); ctx.globalAlpha=.18; ctx.fillStyle='#000';
+  ctx.beginPath(); ctx.ellipse(s[0],s[1],6,3,0,0,7); ctx.fill(); ctx.globalAlpha=1;
+}
+
+function bike(){
+  const p=player;
+  if(p.inv>0 && Math.floor(T*14)%2===0) return;
+  shadow(p.x,p.z,44,42);
+  const down=p.crash>0?1:0;
+  ctx.save();
+  const o=P(p.x,0,p.z); ctx.translate(o[0],o[1]);
+  if(down) ctx.rotate(0.95*Math.min(1,(1.25-p.crash)*3.2));
+  ctx.rotate(p.lean*11*Math.PI/180);
+  ctx.translate(-o[0],-o[1]);
+
+  const bob = down?0:Math.sin(T*13)*1.2;
+  const cad = down?0:T*(p.speed/24);          // ペダルの回転
+  const spin= down?0:T*(p.speed/13);          // 車輪の回転
+  const stA = p.lean*0.42;                    // 前輪の切れ角
+  const C={frame:'#C0392B',frame2:'#8E2A1F',tire:'#23272F',rim:'rgba(225,219,203,.85)',
+           skin:'#E8B48C',shirt:'#2F7ACF',pants:'#2E4374',cap:'#FFC63F',bag:'#E7DEC6'};
+
+  // 世界座標 → 画面。z,y は自転車ローカル、dx は左右のずれ
+  const V=(z,y,dx)=>P(p.x+(dx||0), y, p.z+z);
+  function seg(a,b,w,col){ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);
+    ctx.lineWidth=w;ctx.strokeStyle=col;ctx.lineCap='round';ctx.stroke();}
+  function wheel(zc,r,ang){
+    const dz=Math.cos(ang), dx=Math.sin(ang);
+    ctx.beginPath();
+    for(let i=0;i<=22;i++){const a=i/22*Math.PI*2;
+      const q=V(zc+r*Math.cos(a)*dz, 14+r*Math.sin(a), r*Math.cos(a)*dx);
+      i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]);}
+    ctx.closePath(); ctx.lineWidth=3.6; ctx.strokeStyle=C.tire; ctx.stroke();
+    const c=V(zc,14,0); ctx.lineWidth=1; ctx.strokeStyle=C.rim;
+    for(let i=0;i<5;i++){const a=i/5*Math.PI*2+spin;
+      const q=V(zc+(r-3)*Math.cos(a)*dz, 14+(r-3)*Math.sin(a), (r-3)*Math.cos(a)*dx);
+      ctx.beginPath();ctx.moveTo(c[0],c[1]);ctx.lineTo(q[0],q[1]);ctx.stroke();}
+    ctx.fillStyle='#D6CEBA';ctx.beginPath();ctx.arc(c[0],c[1],2.2,0,7);ctx.fill();
+  }
+
+  // 骨格
+  const R=V(-17,14,0), F=V(17,14,0), BB=V(-1,11,0), SEAT=V(-13,36,0), HEAD=V(13,34,0);
+  const barL=V(14.5,36,-11), barR=V(14.5,36,11);
+  const hipL=V(-9,44,-5), hipR=V(-9,44,5);
+  const shoL=V(5,63+bob,-6), shoR=V(5,63+bob,6);
+  const pedal=(ph,dx)=>V(-1+9*Math.cos(ph), 11+9*Math.sin(ph), dx);
+  const knee=(ph,dx)=>V(-1+9*Math.cos(ph)*0.5+2, 30+4.5*Math.sin(ph), dx*1.1);
+
+  wheel(-17,14,0);                                  // 後輪
+  seg(R,BB,2.6,C.frame2); seg(R,SEAT,2.4,C.frame2); // チェーンステー・シートステー
+  ctx.fillStyle='#3A3F49'; const cr=V(-1,11,0);     // チェーンリング
+  ctx.beginPath();ctx.arc(cr[0],cr[1],4.6,0,7);ctx.fill();
+
+  // 奥（左）の脚
+  seg(hipL,knee(cad,-5),5.5,C.pants); seg(knee(cad,-5),pedal(cad,-6),4.6,C.pants);
+  seg(pedal(cad,-6),pedal(cad,-6),5,'#2B2F38');
+
+  seg(BB,SEAT,3,C.frame); seg(SEAT,HEAD,3,C.frame);
+  seg(BB,HEAD,3.2,C.frame); seg(HEAD,F,2.6,C.frame2);
+  wheel(17,14,stA);                                 // 前輪
+  seg(barL,barR,2.6,'#4A4F58');                     // ハンドル
+  seg(V(-15,37,0),V(-9,38,0),5.5,'#2B2F38');        // サドル
+
+  // 胴と鞄
+  ctx.lineWidth=1; ctx.fillStyle=C.bag;
+  const bag=[V(-16,26,6),V(-3,28,7),V(-3,45,7),V(-16,43,6)];
+  poly([V(-6,40,4),V(4,58+bob,5),V(6,62+bob,-6),V(-8,46,-5)],C.shirt); // 胴（前傾）
+  seg(shoL,barL,5,C.shirt); seg(shoL,barL,3.4,C.skin);                 // 奥の腕
+  poly(bag,C.bag,'rgba(60,55,45,.5)');
+  seg(V(-8,44,6),V(6,62+bob,3),3,'#B9B0A0');                           // 肩紐
+  { const t=V(-10,36,7); ctx.fillStyle='#3A342A'; ctx.font='700 7px ui-monospace,monospace';
+    ctx.textAlign='center'; ctx.fillText('NEWS',t[0],t[1]); }
+
+  // 手前（右）の脚と腕
+  seg(hipR,knee(cad+Math.PI,5),6,C.pants); seg(knee(cad+Math.PI,5),pedal(cad+Math.PI,6),5,C.pants);
+  seg(shoR,barR,5.4,C.shirt); seg(V(9,58+bob,6),barR,3.8,C.skin);
+
+  // 頭
+  const hd=V(10,72+bob,0);
+  ctx.fillStyle=C.skin; ctx.beginPath(); ctx.arc(hd[0],hd[1],6.6,0,7); ctx.fill();
+  ctx.fillStyle=C.cap;
+  ctx.beginPath(); ctx.arc(hd[0],hd[1]-1.4,6.6,Math.PI*1.02,Math.PI*2.05); ctx.fill();
+  const bl=V(16,73+bob,0);
+  ctx.beginPath(); ctx.moveTo(hd[0],hd[1]-1); ctx.lineTo(bl[0],bl[1]-3.5); ctx.lineTo(bl[0],bl[1]+.5);
+  ctx.closePath(); ctx.fillStyle='#E0A81F'; ctx.fill();
+
+  ctx.restore();
+}
+
+/* ---------------- 画面 ---------------- */
+const overlay=document.getElementById('overlay'), front=document.getElementById('front');
+const toastEl=document.getElementById('toast'); let toastT=0;
+function toast(t){ toastEl.textContent=t; toastEl.classList.add('on'); clearTimeout(toastT); toastT=setTimeout(()=>toastEl.classList.remove('on'),1400); }
+function hud(){
+  document.getElementById('scoreV').textContent=player.score;
+  const pv=document.getElementById('papersV'); pv.textContent=player.papers;
+  pv.className=player.papers<=2?'warn':'';
+  document.getElementById('heartsV').textContent='♦'.repeat(Math.max(0,player.lives))||'—';
+  document.getElementById('prog').style.width=Math.min(100,player.z/goalZ*100)+'%';
+}
+function show(html){ front.innerHTML=html; overlay.classList.remove('hide'); }
+function hideOverlay(){ overlay.classList.add('hide'); }
+
+function routeHTML(list,changes){
+  const cm={}; (changes||[]).forEach(c=>cm[c.i]=c.type);
+  const cells=list.map((sub,i)=>{
+    const body=sub?'#F5F1E6':'#B8402F', roof=sub?'#6B7A8F':'#6E2A20';
+    const cls=cm[i]?' '+cm[i]:'';
+    const label=cm[i]==='new'?'新規':cm[i]==='lost'?'解約':(i+1);
+    return `<div class="hs${cls}"><svg width="40" height="34" viewBox="0 0 40 34" role="img" aria-label="${i+1}番 ${sub?'購読者':'非購読'}">
+      <polygon points="20,2 37,13 3,13" fill="${roof}" stroke="#14110E" stroke-width="1"/>
+      <rect x="6" y="13" width="28" height="19" fill="${body}" stroke="#14110E" stroke-width="1"/>
+      <rect x="10.5" y="17" width="7" height="7" fill="#6FA8C4" stroke="#14110E" stroke-width=".7"/>
+      <rect x="22.5" y="17" width="7" height="7" fill="#6FA8C4" stroke="#14110E" stroke-width=".7"/>
+      <rect x="17" y="26" width="6" height="6" fill="#4A3524"/>
+      ${sub?'<rect x="0.5" y="23" width="4" height="9" fill="#EDE6D6" stroke="#14110E" stroke-width=".7"/><rect x="0.5" y="23" width="4" height="3" fill="#C0392B"/>':''}
+    </svg><em>${label}</em></div>`;
+  }).join('');
+  return `<div class="route" aria-label="配達区域の家の一覧">${cells}</div>`;
+}
+
+function titleScreen(){
+  state='title';
+  const ctrl=isTouch
+    ? '<p><span class="k">左下スティック</span> ハンドル操作。<span class="k">右下ボタン</span> 新聞を左へ投げる。</p>'
+    : '<p><span class="k">← →</span> ハンドル操作。<span class="k">SPACE</span> 新聞を左へ投げる。<span class="k">P</span> 一時停止。</p>';
+  show(`
+    <div class="eyebrow"><span>第 1 版</span><span>朝 5:40 発</span></div>
+    <div class="rule"></div>
+    <h1>朝刊ルート</h1>
+    <div class="rule"></div>
+    <p class="lede">配達区域は一本道。${HOUSES}軒のうち、白い家だけが購読者だ。ポストに入れば上々、庭に落ちてもまあ及第点。窓を割れば、翌朝の苦情はきみのものになる。丁寧に走れば契約は増え、荒く走れば減る。</p>
+    <h2>操作</h2>
+    <div class="cols">${ctrl}
+      <p><b>ポスト命中</b> ＋500点。ポストの真横に来た瞬間に投げる。</p>
+      <p><b>敷地内に着地</b> ＋100点。届けばよしとする配達員の良心。</p>
+      <p><b>購読者の窓</b> −300点。家に寄りすぎると新聞が高いまま壁に届く。</p>
+      <p><b>非購読者の窓</b> 増減なし。割っても購読はしてくれない。</p>
+      <p><b>避ける</b> 路上駐車、飛び出す子ども、走る犬、ゴミ箱やコーン。3回転ぶとその日は終わり。</p>
+      <p><b>NEWS の束</b> を踏むと新聞を6部補充。</p>
+    </div>
+    <div class="legend">
+      <span><i class="sw" style="background:#F2EEE2"></i>購読者の家</span>
+      <span><i class="sw" style="background:#B8402F"></i>非購読者の家</span>
+      <span><i class="sw" style="background:#EDE6D6"></i>ポスト</span>
+    </div>
+    <button class="start">配達区域を見る</button>`);
+  front.querySelector('.start').onclick=()=>{ audio(); stage=1; career=0; newRoute(); briefing(); };
+}
+
+function briefing(changes){
+  state='brief';
+  const subs=route.filter(Boolean).length;
+  document.querySelector('.masthead').textContent=`朝刊ルート ${stage}日目`;
+  show(`
+    <div class="eyebrow"><span>${stage} 日目・朝 5:40</span><span>購読 ${subs} / ${HOUSES} 軒</span></div>
+    <div class="rule"></div>
+    <h1>本日の配達先</h1>
+    <div class="rule"></div>
+    <p class="lede">順路は左から右へ、${HOUSES}軒。ポストの付いた白い家 ${subs} 軒が今日の購読者だ。番号は走る順番と同じ。</p>
+    ${routeHTML(route,changes)}
+    <div class="legend">
+      <span><i class="sw" style="background:#F5F1E6"></i>購読者（配達する）</span>
+      <span><i class="sw" style="background:#B8402F"></i>非購読者（投げても無得点）</span>
+    </div>
+    <p class="lede" style="font-size:12px;margin-top:8px">走り終えた評判で明日の購読者は増減する。基準は1500点。そこから1500点上回るごとに新規契約が1軒、下回るごとに1軒が解約（1日あたり最大3軒）。窓を割られた家、朝刊が届かなかった家から先に解約される。</p>
+    <button class="start">配達に出る</button>`);
+  front.querySelector('.start').onclick=start;
+}
+function start(){ audio(); reset(); hideOverlay(); state='play'; hud(); }
+function togglePause(){
+  if(state==='play'){ state='pause';
+    show(`<div class="eyebrow"><span>休憩</span><span>${stage}日目・配達中断</span></div><div class="rule"></div>
+      <h1>一時停止</h1><div class="rule"></div>
+      <p class="lede">現在 ${player.score} 点。残り ${Math.max(0,Math.round((goalZ-player.z)/10))} m。</p>
+      <button class="start">配達に戻る</button>`);
+    front.querySelector('.start').onclick=()=>{hideOverlay();state='play';};
+  } else if(state==='pause'){ hideOverlay(); state='play'; }
+}
+
+/* 得点に応じて購読者を増減させる */
+function evaluate(score){
+  let net=Math.floor((score-1500)/1500);
+  net=Math.max(-3,Math.min(3,net));
+  const changes=[];
+  if(net<0){
+    // 窓を割られた家、次に未配達の家から解約する
+    const rank=h=>(h.shards[0]||h.shards[1]?3:0)+(h.state==='missed'?2:0)+(h.state==='yard'?1:0)+Math.random()*0.5;
+    const cand=houses.filter(h=>h.sub).sort((a,b)=>rank(b)-rank(a));
+    for(let k=0;k<-net&&k<cand.length;k++){ route[cand[k].i]=false; changes.push({i:cand[k].i,type:'lost'}); }
+  } else if(net>0){
+    const cand=houses.filter(h=>!h.sub).sort(()=>Math.random()-0.5);
+    for(let k=0;k<net&&k<cand.length;k++){ route[cand[k].i]=true; changes.push({i:cand[k].i,type:'new'}); }
+  }
+  return changes;
+}
+
+function result(title,lede,cleared){
+  const perfect=stats.mail*150;
+  const subs=houses.filter(h=>h.sub).length;
+  const clean=(cleared&&stats.broke===0&&stats.miss===0)?800:0;
+  player.score+=perfect+clean;
+  career+=player.score;
+  const changes=evaluate(player.score);
+  const after=route.filter(Boolean).length;
+  const gained=changes.filter(c=>c.type==='new').length, lost=changes.filter(c=>c.type==='lost').length;
+  const net=gained-lost;
+  const netTxt = after===0 ? '<span style="color:#B03A26">購読者がいなくなった。この区域は廃止だ。</span>'
+    : net>0 ? `<span style="color:#1E6B3A">評判が上がり、新規契約 ${gained} 軒。</span>`
+    : net<0 ? `<span style="color:#B03A26">苦情が入り、${lost} 軒が解約した。</span>`
+    : '購読者の増減はなし。明日も同じ ' + after + ' 軒だ。';
+  show(`
+    <div class="eyebrow"><span>${stage} 日目・配達報告</span><span>通算 ${career} 点</span></div>
+    <div class="rule"></div><h1>${title}</h1><div class="rule"></div>
+    <p class="lede">${lede}</p>
+    <table class="tally">
+      <tr><td>ポスト命中　<small>${stats.mail} / ${subs} 軒</small></td><td>${stats.mail}</td></tr>
+      <tr><td>敷地内に着地</td><td>${stats.yard}</td></tr>
+      <tr><td>購読者の割れた窓</td><td>${stats.broke}</td></tr>
+      <tr><td>未配達の購読者</td><td>${stats.miss}</td></tr>
+      <tr><td>正確な投球ボーナス</td><td>+${perfect}</td></tr>
+      ${clean?`<tr><td>無事故・無苦情ボーナス</td><td>+${clean}</td></tr>`:''}
+      <tr class="total"><td>本日の得点</td><td>${player.score}</td></tr>
+    </table>
+    <h2>明日の配達先　<small style="font:600 12px ui-monospace,monospace">${subs} → ${after} 軒</small></h2>
+    ${routeHTML(route,changes)}
+    <p class="netline">${netTxt}</p>
+    <button class="start">${after===0?'最初からやり直す':(stage+1)+'日目へ'}</button>`);
+  front.querySelector('.start').onclick=()=>{
+    if(after===0){ stage=1; career=0; newRoute(); }
+    else stage++;
+    briefing(changes);
+  };
+}
+function finish(){ state='clear'; SFX.goal(); result('区域を走りきった','最後の一軒を過ぎ、空はもう明るい。あとは自転車を押して帰るだけだ。',true); }
+function gameover(){ state='over'; SFX.fail();
+  houses.forEach(h=>{ if(h.state==='pending'){ h.state='missed'; if(h.sub) stats.miss++; } }); result('配達中止','三度目の転倒。パンクした前輪を担いで、きみは販売店へ引き返した。残りの家には朝刊が届かなかった。',false); }
+
+/* ---------------- ループ ---------------- */
+let last=performance.now();
+function loop(now){
+  const dt=Math.min(0.05,(now-last)/1000); last=now;
+  update(dt); draw(); requestAnimationFrame(loop);
+}
+resize(); newRoute(); reset(); titleScreen(); requestAnimationFrame(loop);
+</script>
+</body>
+</html>
